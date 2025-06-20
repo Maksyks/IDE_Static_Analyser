@@ -1,0 +1,9 @@
+{
+    "IID": "com.myide.plugins.IPluginInterface",
+    "MetaData": {
+        "Name": "SlicePlugin",
+        "Version": "1.0",
+        "Author": "YourName",
+        "Description": "Плагин для вырезки первых 10 строк кода"
+    }
+}
