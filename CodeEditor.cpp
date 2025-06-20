@@ -11,6 +11,7 @@
 #include "IPluginInterface.h"
 #include "mainwindow.h"
 #include <QDebug>
+#include "CHighlighter.h"
 
 CodeEditor::CodeEditor(QWidget *parent)
     : QPlainTextEdit(parent), lineNumberArea(new LineNumberArea(this))
@@ -25,7 +26,9 @@ CodeEditor::CodeEditor(QWidget *parent)
     font.setFamily("Courier");  // Можно также "Consolas", "Monospace"
     font.setPointSize(12);
     this->setFont(font);
+    new CHighlighter(document());
     setContextMenuPolicy(Qt::DefaultContextMenu);
+
 }
 
 int CodeEditor::lineNumberAreaWidth()
