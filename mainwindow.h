@@ -16,6 +16,11 @@ class IDE : public QMainWindow
 public:
     explicit IDE(QWidget *parent = nullptr);
     ~IDE() override = default;
+    const QList<IPluginInterface*>& getPlugins() const {
+        return plugins;
+    }
+    CodeEditor* getRightEditor() const { return rightEditor; }
+
 
 private slots:
     void openSourceFile();

@@ -26,7 +26,7 @@ QString SlicePlugin::askCriterion(QWidget *parent) {
         bool ok = false;
         QString text = QInputDialog::getText(parent,
                                              tr("Критерий среза"),
-                                             tr("Введите критерий, например main:21:sum:"),
+                                             tr("Введите критерий, например 21:sum:"),
                                              QLineEdit::Normal,
                                              QString(), &ok);
         if (!ok || text.isEmpty()) return QString();
@@ -108,4 +108,71 @@ QString SlicePlugin::process(const QString &input, QWidget *parent) {
     // 6) Возврат stdout как текста
     QByteArray result = proc.readAllStandardOutput();
     return QString::fromUtf8(result);
+}
+
+// Общий внутренний метод: логика среза по заданному критерию
+QString SlicePlugin::processWithCriterion(const QString &input,
+                                          const QString &criterion,
+                                          QWidget *parent)
+{
+    // 1) Сохраняем input как временный файл
+    QTemporaryDir tmpd;
+    if (!tmpd.isValid()) {
+        QMessageBox::warning(parent, tr("Ошибка"), tr("Не удалось создать временную папку"));
+        return {};
+    }
+    QString tmpC = tmpd.path() + "/input.c";
+    QFile outF(tmpC);
+    if (!outF.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(parent, tr("Ошибка"), tr("Не удалось сохранить временный .c"));
+        return {};
+    }
+    QTextStream ts(&outF);
+    ts << input;
+    outF.close();
+
+    // 2) Путь к script.sh в папке плагина
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString winScript = QDir(appDir).filePath("plugins/slice.sh");
+
+    // 3) Конвертация путей в WSL
+    auto toWsl = [&](const QString &winPath) {
+        QProcess p;
+        p.start("wsl", {"wslpath", "-u", winPath});
+        p.waitForFinished(5000);
+        return QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+    };
+    QString wslScript = toWsl(winScript);
+    QString wslInput  = toWsl(tmpC);
+
+    // 4) Запуск скрипта через WSL с переданным критерием
+    QProcess proc;
+    QString cmd = QString("%1 '%2' '%3'")
+                      .arg(wslScript)
+                      .arg(wslInput)
+                      .arg(criterion);
+    proc.start("wsl", {"bash", "-lc", cmd});
+    if (!proc.waitForFinished(60000)) {
+        QMessageBox::warning(parent, tr("Ошибка"), tr("Скрипт среза не ответил"));
+        return {};
+    }
+    if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0) {
+        QMessageBox::warning(parent, tr("Ошибка среза"), proc.readAllStandardError());
+        return {};
+    }
+
+    // 5) Чтение результата и возврат
+    QByteArray result = proc.readAllStandardOutput();
+    return QString::fromUtf8(result);
+}
+
+QString SlicePlugin::process(const QString &input,
+                             int lineNumber,
+                             const QString &variable,
+                             QWidget *parent)
+{
+    // Собираем критерий
+    QString criterion = QString("%1:%2").arg(lineNumber).arg(variable);
+    // Далее повторяем логику старого process(input, parent), начиная с сохранения временного файла...
+    return processWithCriterion(input, criterion, parent);
 }

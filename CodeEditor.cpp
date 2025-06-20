@@ -3,6 +3,14 @@
 #include <QTextBlock>
 #include <QAbstractTextDocumentLayout>
 #include <QRect>
+#include <QMouseEvent>
+#include <QContextMenuEvent>
+#include <QInputDialog>
+#include <QMenu>
+#include <QRegularExpression>
+#include "IPluginInterface.h"
+#include "mainwindow.h"
+#include <QDebug>
 
 CodeEditor::CodeEditor(QWidget *parent)
     : QPlainTextEdit(parent), lineNumberArea(new LineNumberArea(this))
@@ -17,6 +25,7 @@ CodeEditor::CodeEditor(QWidget *parent)
     font.setFamily("Courier");  // Можно также "Consolas", "Monospace"
     font.setPointSize(12);
     this->setFont(font);
+    setContextMenuPolicy(Qt::DefaultContextMenu);
 }
 
 int CodeEditor::lineNumberAreaWidth()
@@ -56,24 +65,6 @@ void CodeEditor::resizeEvent(QResizeEvent *event)
     lineNumberArea->setGeometry(QRect(cr.left(), cr.top(), lineNumberAreaWidth(), cr.height()));
 }
 
-// void CodeEditor::highlightCurrentLine()
-// {
-//     QList<QTextEdit::ExtraSelection> extraSelections;
-
-//     if (!isReadOnly()) {
-//         QTextEdit::ExtraSelection selection;
-
-//         selection.format.setBackground(QColor(100, 149, 237, 80));
-//         selection.format.setProperty(QTextFormat::FullWidthSelection, true);
-//         selection.cursor = textCursor();
-//         selection.cursor.clearSelection();
-
-//         extraSelections.append(selection);
-//     }
-
-//     setExtraSelections(extraSelections);
-// }
-
 void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event)
 {
     QPainter painter(lineNumberArea);
@@ -104,4 +95,98 @@ void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event)
         bottom = top + static_cast<int>(blockBoundingRect(block).height());
         ++blockNumber;
     }
+}
+
+void CodeEditor::highlightLine(int blockNumber) {
+    QList<QTextEdit::ExtraSelection> extras;
+    QTextEdit::ExtraSelection sel;
+    sel.format.setBackground(QColor(100, 149, 237, 80));
+    sel.format.setProperty(QTextFormat::FullWidthSelection, true);
+    QTextCursor cursor(document()->findBlockByNumber(blockNumber));
+    sel.cursor = cursor;
+    extras.append(sel);
+    setExtraSelections(extras);
+    currentHighlight = sel;
+}
+
+void CodeEditor::clearLineHighlight() {
+    setExtraSelections({});
+}
+
+void CodeEditor::mousePressEvent(QMouseEvent *event) {
+    if (event->button() == Qt::LeftButton) {
+        // Определить номер блока (строки)
+        QTextCursor cursor = cursorForPosition(event->pos());
+        int line = cursor.blockNumber();
+        highlightLine(line);
+    }
+    QPlainTextEdit::mousePressEvent(event);
+}
+
+void CodeEditor::contextMenuEvent(QContextMenuEvent *event) {
+    QMenu *menu = createStandardContextMenu();
+    // Найти номер строки, на которую кликнули
+    QTextCursor cursor = cursorForPosition(event->pos());
+    int line = cursor.blockNumber() + 1; // 1-based
+    QString text = document()->findBlockByNumber(line-1).text();
+
+    // Регулярка для переменных (идентификаторы)
+    static QRegularExpression re(R"((?:\b)([A-Za-z_][A-Za-z0-9_]*)(?:\b))");
+    QSet<QString> vars;
+    for (auto it = re.globalMatch(text); it.hasNext(); ) {
+        auto match = it.next().captured(1);
+        // Фильтруем ключевые слова (int, for, if, ...)
+        static const QSet<QString> keywords = {
+            // Основные
+            "auto", "break", "case", "char",
+            "const", "continue", "default", "do",
+            "double", "else", "enum", "extern",
+            "float", "for", "goto", "if",
+            "int", "long", "register", "return",
+            "short", "signed", "sizeof", "static",
+            "struct", "switch", "typedef", "union",
+            "unsigned", "void", "volatile", "while",
+            "_Bool", "_Complex", "_Imaginary", "inline", "restrict",
+            "_Alignas", "_Alignof", "_Atomic", "_Generic",
+            "_Noreturn", "_Static_assert", "_Thread_local"
+        };
+        if (!keywords.contains(match)) vars.insert(match);
+    }
+    if (!vars.isEmpty()) {
+        QAction *sliceAct = menu->addAction(tr("Сделать срез"));
+        connect(sliceAct, &QAction::triggered, [this, line, vars]() {
+            QString var;
+            if (vars.size() == 1) {
+                var = *vars.begin();
+            } else {
+                QStringList list = QStringList(vars.values());
+                bool ok;
+                var = QInputDialog::getItem(this,
+                                            tr("Выберите переменную"),
+                                            tr("Переменные в строке:"),
+                                            list, 0, false, &ok);
+                if (!ok || var.isEmpty()) return;
+            }
+            // Формируем критерий
+            QString criterion = QString::number(line) + ":" + var;
+            // Берём текст из редактора
+            QString src = toPlainText();
+            // Ищем плагин "Сделать срез"
+            // Получаем указатель на главное окно IDE и его список плагинов
+            if (auto *ide = qobject_cast<IDE*>(window())) {
+                for (IPluginInterface* plug : ide->getPlugins()) {
+                    if (plug->pluginName() == tr("Сделать срез")) {
+                        qDebug() << "  -> Found slicer plugin!";
+                        QString out = plug->process(src, line, var, this);
+                        if (!out.isNull() && ide->getRightEditor())
+                            ide->getRightEditor()->setPlainText(out);
+                        break;
+                    }
+                }
+            }
+
+        });
+    }
+    menu->exec(event->globalPos());
+    delete menu;
 }

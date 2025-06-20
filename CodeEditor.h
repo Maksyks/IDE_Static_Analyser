@@ -15,9 +15,14 @@ public:
 
     void lineNumberAreaPaintEvent(QPaintEvent *event);
     int lineNumberAreaWidth();
+    // Подсветка строки при ЛКМ
+    void highlightLine(int blockNumber);
+    void clearLineHighlight();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
 
 private slots:
     void updateLineNumberAreaWidth(int newBlockCount);
@@ -26,6 +31,7 @@ private slots:
 
 private:
     LineNumberArea *lineNumberArea;
+    QTextEdit::ExtraSelection currentHighlight;
 };
 
 class LineNumberArea : public QWidget

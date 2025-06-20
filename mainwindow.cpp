@@ -63,6 +63,7 @@ void IDE::loadPlugins()
     for (QString fn : pluginsDir.entryList(QDir::Files)) {
         QPluginLoader loader(pluginsDir.absoluteFilePath(fn));
         if (auto *plug = qobject_cast<IPluginInterface*>(loader.instance())) {
+                plugins.append(plug);
             QAction *act = new QAction(plug->pluginName(), this);
             connect(act, &QAction::triggered, [this, plug](){
                 QString in = leftEditor->toPlainText();
@@ -75,10 +76,3 @@ void IDE::loadPlugins()
     }
 }
 
-// void IDE::applyPlugin()
-// {
-//     if (!currentPlugin) return;
-//     QString in  = leftEditor->toPlainText(); //берет текст из левого окна
-//     QString out = currentPlugin->process(in); //возвращает результат плагина
-//     rightEditor->setPlainText(out);
-// }
